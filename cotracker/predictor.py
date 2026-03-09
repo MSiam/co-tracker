@@ -30,7 +30,11 @@ class CoTrackerPredictor(torch.nn.Module):
         )
         self.interp_shape = model.model_resolution
         self.model = model
+        self.extract_feature_type = None
         self.model.eval()
+
+    def set_extract_feat_type(self, extract_type):
+        self.model.extract_feature_type = extract_type
 
     @torch.no_grad()
     def forward(
@@ -54,8 +58,9 @@ class CoTrackerPredictor(torch.nn.Module):
                 grid_query_frame=grid_query_frame,
                 backward_tracking=backward_tracking,
             )
+            output_feats = None
         else:
-            tracks, visibilities = self._compute_sparse_tracks(
+            tracks, visibilities, output_feats = self._compute_sparse_tracks(
                 video,
                 queries,
                 segm_mask,
@@ -65,7 +70,7 @@ class CoTrackerPredictor(torch.nn.Module):
                 backward_tracking=backward_tracking,
             )
 
-        return tracks, visibilities
+        return tracks, visibilities, output_feats
 
     def _compute_dense_tracks(
         self, video, grid_query_frame, grid_size=80, backward_tracking=False
@@ -154,7 +159,7 @@ class CoTrackerPredictor(torch.nn.Module):
             grid_pts = grid_pts.repeat(B, 1, 1)
             queries = torch.cat([queries, grid_pts], dim=1)
 
-        tracks, visibilities, *_ = self.model.forward(
+        tracks, visibilities, *_, output_feats = self.model.forward(
             video=video, queries=queries, iters=6
         )
 
@@ -187,7 +192,7 @@ class CoTrackerPredictor(torch.nn.Module):
         tracks *= tracks.new_tensor(
             [(W - 1) / (self.interp_shape[1] - 1), (H - 1) / (self.interp_shape[0] - 1)]
         )
-        return tracks, visibilities
+        return tracks, visibilities, output_feats
 
     def _compute_backward_tracks(self, video, queries, tracks, visibilities):
         inv_video = video.flip(1).clone()
@@ -269,7 +274,7 @@ class CoTrackerOnlinePredictor(torch.nn.Module):
                     [torch.ones_like(grid_pts[:, :, :1]) * grid_query_frame, grid_pts],
                     dim=2,
                 )
-            
+
             self.queries = queries
             return (None, None)
 
@@ -293,7 +298,7 @@ class CoTrackerOnlinePredictor(torch.nn.Module):
             visibilities = visibilities[:,:,:self.N]
             if not self.v2:
                 confidence = confidence[:,:,:self.N]
-            
+
         if not self.v2:
             visibilities = visibilities * confidence
         thr = 0.6

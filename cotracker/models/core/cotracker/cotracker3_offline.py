@@ -14,6 +14,7 @@ torch.manual_seed(0)
 
 class CoTrackerThreeOffline(CoTrackerThreeBase):
     def __init__(self, **args):
+        self.extract_feature_type = 'none'
         super(CoTrackerThreeOffline, self).__init__(**args)
 
     def forward(
@@ -130,11 +131,14 @@ class CoTrackerThreeOffline(CoTrackerThreeBase):
 
         coord_preds, vis_preds, confidence_preds = [], [], []
 
-        vis = torch.zeros((B, T, N), device=device).float()
-        confidence = torch.zeros((B, T, N), device=device).float()
-        coords = queried_coords.reshape(B, 1, N, 2).expand(B, T, N, 2).float()
+        ###### Changed float() to dtype (bfloat16)
+        vis = torch.zeros((B, T, N), device=device).to(dtype)
+        confidence = torch.zeros((B, T, N), device=device).to(dtype)
+        coords = queried_coords.reshape(B, 1, N, 2).expand(B, T, N, 2).to(dtype)
 
         r = 2 * self.corr_radius + 1
+
+        output_feats = None
 
         for it in range(iters):
             coords = coords.detach()  # B T N 2
@@ -156,8 +160,13 @@ class CoTrackerThreeOffline(CoTrackerThreeBase):
                 )
                 corr_emb = self.corr_mlp(corr_volume.reshape(B * T * N, r * r * r * r))
                 corr_embs.append(corr_emb)
+
             corr_embs = torch.cat(corr_embs, dim=-1)
             corr_embs = corr_embs.view(B, T, N, corr_embs.shape[-1])
+
+            # Option 2 to use for my method.
+            if self.extract_feature_type == 'corr_embs':
+                output_feats = corr_embs
 
             transformer_input = [vis[..., None], confidence[..., None], corr_embs]
 
@@ -184,7 +193,7 @@ class CoTrackerThreeOffline(CoTrackerThreeBase):
                 torch.cat([rel_coords_forward, rel_coords_backward], dim=-1),
                 min_deg=0,
                 max_deg=10,
-            )  # batch, num_points, num_frames, 84
+            ).to(dtype)  # batch, num_points, num_frames, 84
             transformer_input.append(rel_pos_emb_input)
 
             x = (
@@ -195,6 +204,10 @@ class CoTrackerThreeOffline(CoTrackerThreeBase):
 
             x = x + self.interpolate_time_embed(x, T)
             x = x.view(B, N, T, -1)  # (B N) T D -> B N T D
+
+            # Option 1 to use for my method.
+            if self.extract_feature_type == 'transf_input':
+                output_feats = x
 
             delta = self.updateformer(
                 x,
@@ -230,4 +243,4 @@ class CoTrackerThreeOffline(CoTrackerThreeBase):
         else:
             train_data = None
 
-        return coord_preds[-1][..., :2], vis_preds[-1], confidence_preds[-1], train_data
+        return coord_preds[-1][..., :2], vis_preds[-1], confidence_preds[-1], train_data, output_feats

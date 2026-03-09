@@ -131,11 +131,15 @@ def get_points_on_a_grid(
     margin = extent[1] / 64
     range_y = (margin - extent[0] / 2 + center[0], extent[0] / 2 + center[0] - margin)
     range_x = (margin - extent[1] / 2 + center[1], extent[1] / 2 + center[1] - margin)
+
+    dtype_ = size.dtype
     grid_y, grid_x = torch.meshgrid(
-        torch.linspace(*range_y, size, device=device),
-        torch.linspace(*range_x, size, device=device),
+        torch.linspace(*range_y, size.int(), device=device),
+        torch.linspace(*range_x, size.int(), device=device),
         indexing="ij",
     )
+    grid_y = grid_y.to(dtype_)
+    grid_x = grid_x.to(dtype_)
     return torch.stack([grid_x, grid_y], dim=-1).reshape(1, -1, 2)
 
 
@@ -416,7 +420,7 @@ def bilinear_sampler(input, coords, align_corners=True, padding_mode="border"):
         )
 
     coords -= 1
-
+    coords = coords.to(input.dtype)
     return F.grid_sample(
         input, coords, align_corners=align_corners, padding_mode=padding_mode
     )

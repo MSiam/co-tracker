@@ -89,10 +89,11 @@ if __name__ == "__main__":
     model = model.to(DEFAULT_DEVICE)
     video = video.to(DEFAULT_DEVICE)
 
-    pred_tracks, pred_visibility = model(
+    model.set_extract_feat_type(extract_type='corr_embs')
+    pred_tracks, pred_visibility, output_feats = model(
         video,
-        grid_size=args.grid_size,
-        grid_query_frame=args.grid_query_frame,
+        grid_size=torch.tensor(args.grid_size).float(),
+        grid_query_frame=torch.tensor(args.grid_query_frame).float(),
         backward_tracking=args.backward_tracking,
         # segm_mask=segm_mask
     )
